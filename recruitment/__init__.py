@@ -1,0 +1,1 @@
+"""Recruitment automation domain package."""
