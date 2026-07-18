@@ -12,6 +12,7 @@ class JobPosition(SQLModel, table=True):
     public_company_name: str | None = None
     title: str = Field(index=True)
     description: str
+    summary: str | None = None
     location: str | None = None
     remote_policy: str | None = None
     employment_type: str | None = None

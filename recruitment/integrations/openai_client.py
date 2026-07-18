@@ -1,92 +1,14 @@
-import json
-from typing import Any
+from typing import Any, TypeVar
+
+from pydantic import BaseModel
 
 from recruitment.config import get_settings
+from recruitment.schemas.candidate_schema import CandidateExtractionTemplate
+from recruitment.schemas.job_schema import JobExtractionTemplate
+from recruitment.schemas.match_schema import MatchExplanationTemplate
 
 
-CV_SCHEMA: dict[str, Any] = {
-    "name": "candidate_cv_extraction",
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "full_name": {"type": "string"},
-            "email": {"type": ["string", "null"]},
-            "phone": {"type": ["string", "null"]},
-            "city": {"type": ["string", "null"]},
-            "country": {"type": ["string", "null"]},
-            "current_title": {"type": ["string", "null"]},
-            "seniority": {"type": ["string", "null"]},
-            "total_years_experience": {"type": ["number", "null"]},
-            "languages": {"type": ["string", "null"]},
-            "ai_summary": {"type": ["string", "null"]},
-            "parse_confidence": {"type": "number"},
-        },
-        "required": [
-            "full_name",
-            "email",
-            "phone",
-            "city",
-            "country",
-            "current_title",
-            "seniority",
-            "total_years_experience",
-            "languages",
-            "ai_summary",
-            "parse_confidence",
-        ],
-    },
-    "strict": True,
-}
-
-JOB_SCHEMA: dict[str, Any] = {
-    "name": "job_email_extraction",
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "client_name": {"type": "string"},
-            "public_company_name": {"type": ["string", "null"]},
-            "title": {"type": "string"},
-            "description": {"type": "string"},
-            "location": {"type": ["string", "null"]},
-            "remote_policy": {"type": ["string", "null"]},
-            "employment_type": {"type": ["string", "null"]},
-            "seniority": {"type": ["string", "null"]},
-            "min_years_experience": {"type": ["number", "null"]},
-            "salary_range": {"type": ["string", "null"]},
-        },
-        "required": [
-            "client_name",
-            "public_company_name",
-            "title",
-            "description",
-            "location",
-            "remote_policy",
-            "employment_type",
-            "seniority",
-            "min_years_experience",
-            "salary_range",
-        ],
-    },
-    "strict": True,
-}
-
-MATCH_SCHEMA: dict[str, Any] = {
-    "name": "candidate_job_match",
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "ai_score": {"type": "number"},
-            "explanation": {"type": "string"},
-            "risks": {"type": "string"},
-            "missing_requirements": {"type": "string"},
-        },
-        "required": ["ai_score", "explanation", "risks", "missing_requirements"],
-    },
-    "strict": True,
-}
+SchemaTemplate = TypeVar("SchemaTemplate", bound=BaseModel)
 
 
 def openai_enabled() -> bool:
@@ -105,27 +27,43 @@ def _client():
     return OpenAI(api_key=settings.openai_api_key)
 
 
-def _json_schema_completion(model: str, schema: dict[str, Any], system: str, user: str) -> dict:
-    response = _client().chat.completions.create(
+def _json_schema_completion(
+    model: str,
+    template: type[SchemaTemplate],
+    system: str,
+    user: str,
+) -> dict[str, Any]:
+    response = _client().beta.chat.completions.parse(
         model=model,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        response_format={"type": "json_schema", "json_schema": schema},
+        response_format=template,
         temperature=0,
     )
-    return json.loads(response.choices[0].message.content or "{}")
+    message = response.choices[0].message
+    if message.refusal:
+        raise RuntimeError(f"OpenAI refused the extraction: {message.refusal}")
+    if message.parsed is None:
+        raise RuntimeError("OpenAI returned no structured extraction")
+    return message.parsed.model_dump(mode="json")
 
 
 def extract_candidate_from_cv(text: str) -> dict:
     settings = get_settings()
     return _json_schema_completion(
         settings.openai_cv_model,
-        CV_SCHEMA,
+        CandidateExtractionTemplate,
         (
             "Extract recruitment candidate facts from CV text. The CV may be in "
-            "English or Hebrew. Use only facts supported by the text. If unknown, use null."
+            "English or Hebrew. Use only facts supported by the text. If unknown, use null. "
+            "Return full_name, city, country, and current_title in standard Hebrew. "
+            "Transliterate a Latin-script name to Hebrew, and translate a job title to Hebrew "
+            "when needed. Format Israeli phone numbers as 05X-XXX-XXXX "
+            "(mobile) or 0X-XXX-XXXX (landline). "
+            "Write ai_summary as one concise recruiter-facing paragraph of 2-4 sentences; "
+            "never copy the CV verbatim."
         ),
         text[:24000],
     )
@@ -135,10 +73,12 @@ def extract_job_from_email(subject: str, body: str) -> dict:
     settings = get_settings()
     return _json_schema_completion(
         settings.openai_cv_model,
-        JOB_SCHEMA,
+        JobExtractionTemplate,
         (
             "Extract a recruitment job record from an email. The email may be in "
-            "English or Hebrew. Create a concise but complete job description."
+            "English or Hebrew. Return the job title and location in standard Hebrew. "
+            "Create a concise but complete job description and a short recruiter-facing "
+            "summary in Hebrew."
         ),
         f"Subject: {subject}\n\nBody:\n{body[:24000]}",
     )
@@ -148,8 +88,15 @@ def explain_match(job_text: str, candidate_text: str) -> dict:
     settings = get_settings()
     return _json_schema_completion(
         settings.openai_match_model,
-        MATCH_SCHEMA,
-        "Score and explain candidate fit for the job. Do not reject automatically.",
+        MatchExplanationTemplate,
+        (
+            "Assess whether the candidate is likely to be a viable fit for the job. "
+            "Return every text field in clear, recruiter-friendly Hebrew. Base the assessment "
+            "only on the supplied facts. In explanation, give 2-4 concise sentences describing "
+            "the relevant experience, skills, seniority, or location. Do not mention scores, "
+            "embeddings, models, deterministic matching, or internal system logic. "
+            "Do not make an automatic hiring or rejection decision."
+        ),
         f"JOB:\n{job_text[:12000]}\n\nCANDIDATE:\n{candidate_text[:12000]}",
     )
 

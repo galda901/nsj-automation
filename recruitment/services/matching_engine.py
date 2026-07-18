@@ -16,6 +16,7 @@ from recruitment.services.embeddings import (
 
 TOKEN_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9+#.-]{2,}")
 STOP_WORDS = {"and", "the", "with", "for", "from", "that", "this", "job", "role", "will", "our"}
+MATCH_QUALIFICATION_THRESHOLD = 60.0
 
 
 def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]:
@@ -51,6 +52,9 @@ def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]
             job_id=job.id, candidate_id=candidate.id, total_score=score
         )
         result.total_score = score
+        result.hard_filter_passed = (
+            ai_score is not None and ai_score >= MATCH_QUALIFICATION_THRESHOLD
+        )
         result.ai_score = ai_score
         result.explanation = explanation
         result.risks = risks

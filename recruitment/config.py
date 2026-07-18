@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     dashboard_api_base_url: str = "http://127.0.0.1:8000"
     llm_provider: str = "none"
     openai_api_key: str | None = None
-    openai_cv_model: str = "gpt-4o-mini"
-    openai_match_model: str = "gpt-4o-mini"
+    openai_cv_model: str = "gpt-5.4-nano"
+    openai_match_model: str = "gpt-5.4-nano"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_dimensions: int = 512
     anthropic_api_key: str | None = None

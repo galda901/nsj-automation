@@ -1,5 +1,6 @@
 from collections.abc import Generator
 
+from sqlalchemy import inspect, text
 from sqlmodel import SQLModel, Session, create_engine
 
 from recruitment.config import get_settings
@@ -14,6 +15,22 @@ def create_db_and_tables() -> None:
     import recruitment.models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _apply_sqlite_migrations()
+
+
+def _apply_sqlite_migrations() -> None:
+    """Apply the small additive migrations needed by the local SQLite database."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    inspector = inspect(engine)
+    job_columns = {column["name"] for column in inspector.get_columns("jobposition")}
+    candidate_columns = {column["name"] for column in inspector.get_columns("candidate")}
+    if "summary" not in job_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE jobposition ADD COLUMN summary VARCHAR"))
+    if "comments" not in candidate_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE candidate ADD COLUMN comments VARCHAR"))
 
 
 def get_session() -> Generator[Session, None, None]:

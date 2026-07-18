@@ -17,6 +17,12 @@ def post_json(path: str, payload: dict) -> object:
     return response.json()
 
 
+def patch_json(path: str, payload: dict) -> object:
+    response = httpx.patch(f"{API_BASE_URL}{path}", json=payload, timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+
 def post_empty(path: str) -> object:
     response = httpx.post(f"{API_BASE_URL}{path}", timeout=120)
     response.raise_for_status()
@@ -40,5 +46,5 @@ def api_error_message(error: Exception) -> str:
         except ValueError:
             return error.response.text or str(error)
     if isinstance(error, httpx.ConnectError):
-        return f"Cannot reach the API at {API_BASE_URL}. Start FastAPI first."
+        return f"לא ניתן להתחבר ל־API בכתובת {API_BASE_URL}. יש להפעיל את FastAPI תחילה."
     return str(error)
