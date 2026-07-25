@@ -12,8 +12,8 @@ GMAIL_JOBS_LABEL=משרות
 GMAIL_CVS_LABEL=קורות חיים
 GMAIL_LOOKBACK_DAYS=365
 GMAIL_INCLUDE_CHILD_LABELS=true
-GMAIL_CLIENT_SECRET_FILE=C:\Users\Gal\Desktop\NSJ\Automation\secrets\gmail_client_secret.json
-GMAIL_TOKEN_FILE=C:\Users\Gal\Desktop\NSJ\Automation\secrets\gmail_token.json
+GMAIL_CLIENT_SECRET_FILE=D:\Gal\Projects\General\nsj-automation\secrets\gmail_client_secret.json
+GMAIL_TOKEN_FILE=D:\Gal\Projects\General\nsj-automation\secrets\gmail_token.json
 ```
 
 `GMAIL_LOOKBACK_DAYS=365` means the scan considers messages from the last year.

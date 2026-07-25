@@ -10,7 +10,7 @@ from recruitment.config import get_settings
 class GmailAttachment:
     filename: str
     attachment_id: str
-    content: bytes
+    content: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -37,10 +37,14 @@ class GmailClient:
     def list_messages_by_label(self, label_name: str, lookback_days: int) -> list[GmailMessage]:
         return self.list_messages_by_labels([label_name], lookback_days)
 
+    def list_all_messages_by_label(self, label_name: str) -> list[GmailMessage]:
+        """List every message in a label, across all Gmail result pages."""
+        return self.list_messages_by_labels([label_name], lookback_days=None)
+
     def list_messages_by_labels(
-        self, label_names: list[str], lookback_days: int
+        self, label_names: list[str], lookback_days: int | None
     ) -> list[GmailMessage]:
-        query = f"newer_than:{max(lookback_days, 1)}d"
+        query = f"newer_than:{max(lookback_days, 1)}d" if lookback_days else None
         message_refs_by_id: dict[str, dict] = {}
         for label_id in self.label_ids_for_names(label_names):
             for item in self._list_message_refs(label_id, query):
@@ -70,21 +74,19 @@ class GmailClient:
     def label_names(self) -> list[str]:
         return sorted(str(label.get("name") or "") for label in self.labels())
 
-    def _list_message_refs(self, label_id: str, query: str) -> list[dict]:
+    def _list_message_refs(self, label_id: str, query: str | None) -> list[dict]:
         refs: list[dict] = []
         page_token = None
         while True:
-            request = (
-                self.service.users()
-                .messages()
-                .list(
-                    userId="me",
-                    labelIds=[label_id],
-                    q=query,
-                    pageToken=page_token,
-                    maxResults=100,
-                )
-            )
+            request_args: dict[str, Any] = {
+                "userId": "me",
+                "labelIds": [label_id],
+                "pageToken": page_token,
+                "maxResults": 100,
+            }
+            if query:
+                request_args["q"] = query
+            request = self.service.users().messages().list(**request_args)
             response = request.execute()
             refs.extend(response.get("messages", []))
             page_token = response.get("nextPageToken")
@@ -104,8 +106,18 @@ class GmailClient:
         }
         subject = headers.get("subject", "")
         body = _body_from_payload(raw.get("payload", {}))
-        attachments = self._attachments_from_payload(message_id, raw.get("payload", {}))
+        attachments = self._attachments_from_payload(raw.get("payload", {}))
         return GmailMessage(id=message_id, subject=subject, body=body, attachments=attachments)
+
+    def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        response = (
+            self.service.users()
+            .messages()
+            .attachments()
+            .get(userId="me", messageId=message_id, id=attachment_id)
+            .execute()
+        )
+        return _decode_base64url(response.get("data", ""))
 
     def _label_id(self, label_name: str) -> str:
         for label in self.labels():
@@ -115,7 +127,7 @@ class GmailClient:
                 return str(label["id"])
         raise RuntimeError(f"Gmail label was not found: {label_name}")
 
-    def _attachments_from_payload(self, message_id: str, payload: dict[str, Any]) -> list[GmailAttachment]:
+    def _attachments_from_payload(self, payload: dict[str, Any]) -> list[GmailAttachment]:
         attachments: list[GmailAttachment] = []
         for part in _walk_parts(payload):
             filename = part.get("filename") or ""
@@ -123,19 +135,10 @@ class GmailClient:
             attachment_id = body.get("attachmentId")
             if not filename or not attachment_id:
                 continue
-            response = (
-                self.service.users()
-                .messages()
-                .attachments()
-                .get(userId="me", messageId=message_id, id=attachment_id)
-                .execute()
-            )
-            content = _decode_base64url(response.get("data", ""))
             attachments.append(
                 GmailAttachment(
                     filename=filename,
                     attachment_id=attachment_id,
-                    content=content,
                 )
             )
         return attachments
@@ -156,8 +159,11 @@ def _build_service(client_secret_file: Path, token_file: Path):
         credentials = Credentials.from_authorized_user_file(str(token_file), scopes)
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())
-        else:
+            try:
+                credentials.refresh(Request())
+            except Exception:
+                credentials = None
+        if not credentials or not credentials.valid:
             flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), scopes)
             credentials = flow.run_local_server(port=0)
         token_file.parent.mkdir(parents=True, exist_ok=True)

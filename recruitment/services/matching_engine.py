@@ -17,6 +17,7 @@ from recruitment.services.embeddings import (
 TOKEN_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9+#.-]{2,}")
 STOP_WORDS = {"and", "the", "with", "for", "from", "that", "this", "job", "role", "will", "our"}
 MATCH_QUALIFICATION_THRESHOLD = 60.0
+MATCHING_EMBEDDING_SOURCE = "matching_text"
 
 
 def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]:
@@ -71,33 +72,45 @@ def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]
 def retrieved_candidates_for_job(
     job: JobPosition, session: Session, limit: int = 20
 ) -> list[tuple[Candidate, float]]:
+    """Load cached match embeddings and create one only when its source text changed."""
     upsert_embedding(
         session,
         owner_type="job",
         owner_id=job.id,
-        source_type="job_description",
+        source_type=MATCHING_EMBEDDING_SOURCE,
         text=job_match_text(job),
     )
     session.flush()
-    job_embedding = latest_embedding(session, "job", job.id)
+    job_embedding = latest_embedding(
+        session, "job", job.id, source_type=MATCHING_EMBEDDING_SOURCE
+    )
     if job_embedding is None:
         return [(candidate, 0.0) for candidate in session.exec(select(Candidate)).all()]
     job_vector = decode_embedding(job_embedding)
     ranked: list[tuple[Candidate, float]] = []
-    candidate_embeddings = session.exec(
-        select(EmbeddingRecord).where(EmbeddingRecord.owner_type == "candidate")
-    ).all()
-    seen_candidate_ids: set[str] = set()
-    for record in candidate_embeddings:
-        if record.owner_id in seen_candidate_ids:
-            continue
-        candidate = session.get(Candidate, record.owner_id)
-        if candidate is None:
-            continue
-        ranked.append((candidate, cosine_similarity(job_vector, decode_embedding(record))))
-        seen_candidate_ids.add(record.owner_id)
-    if not ranked:
-        return [(candidate, 0.0) for candidate in session.exec(select(Candidate)).all()]
+    candidates = list(session.exec(select(Candidate)).all())
+    for candidate in candidates:
+        upsert_embedding(
+            session,
+            owner_type="candidate",
+            owner_id=candidate.id,
+            source_type=MATCHING_EMBEDDING_SOURCE,
+            text=candidate_match_text(candidate),
+        )
+    session.flush()
+    candidate_embeddings = {
+        record.owner_id: record
+        for record in session.exec(
+            select(EmbeddingRecord).where(
+                EmbeddingRecord.owner_type == "candidate",
+                EmbeddingRecord.source_type == MATCHING_EMBEDDING_SOURCE,
+            )
+        ).all()
+    }
+    for candidate in candidates:
+        record = candidate_embeddings.get(candidate.id)
+        if record is not None:
+            ranked.append((candidate, cosine_similarity(job_vector, decode_embedding(record))))
     return sorted(ranked, key=lambda item: item[1], reverse=True)[:limit]
 
 

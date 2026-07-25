@@ -84,15 +84,16 @@ def upsert_embedding(
     return record
 
 
-def latest_embedding(session: Session, owner_type: str, owner_id: str) -> EmbeddingRecord | None:
-    return session.exec(
-        select(EmbeddingRecord)
-        .where(
-            EmbeddingRecord.owner_type == owner_type,
-            EmbeddingRecord.owner_id == owner_id,
-        )
-        .order_by(EmbeddingRecord.created_at.desc())
-    ).first()
+def latest_embedding(
+    session: Session, owner_type: str, owner_id: str, source_type: str | None = None
+) -> EmbeddingRecord | None:
+    statement = select(EmbeddingRecord).where(
+        EmbeddingRecord.owner_type == owner_type,
+        EmbeddingRecord.owner_id == owner_id,
+    )
+    if source_type:
+        statement = statement.where(EmbeddingRecord.source_type == source_type)
+    return session.exec(statement.order_by(EmbeddingRecord.created_at.desc())).first()
 
 
 def decode_embedding(record: EmbeddingRecord) -> list[float]:

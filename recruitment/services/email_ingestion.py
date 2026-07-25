@@ -7,10 +7,12 @@ from recruitment.config import get_settings
 from recruitment.integrations.gmail_client import GmailClient, GmailMessage
 from recruitment.integrations.openai_client import openai_enabled
 from recruitment.models.ingestion import IngestionLog
+from recruitment.models.candidate import CandidateFile
 from recruitment.services.cv_ingestion import ingest_cv_file
 from recruitment.services.cv_text_extractor import SUPPORTED_SUFFIXES
 from recruitment.services.embeddings import upsert_embedding
 from recruitment.services.job_parser import parse_job_from_email
+from recruitment.utils.files import sha256_bytes
 
 
 def ingest_gmail_daily(session: Session) -> dict:
@@ -51,16 +53,15 @@ def ingest_gmail_daily(session: Session) -> dict:
         result,
         "gmail_connected",
         detail=(
-            f"Scanning labels '{settings.gmail_jobs_label}' and "
-            f"'{settings.gmail_cvs_label}' for the last {settings.gmail_lookback_days} days"
+            f"Scanning job label '{settings.gmail_jobs_label}' for the last "
+            f"{settings.gmail_lookback_days} days and every message in CV label "
+            f"'{settings.gmail_cvs_label}'"
         ),
     )
     job_messages = client.list_messages_by_label(
         settings.gmail_jobs_label, settings.gmail_lookback_days
     )
-    cv_messages = client.list_messages_by_label(
-        settings.gmail_cvs_label, settings.gmail_lookback_days
-    )
+    cv_messages = client.list_all_messages_by_label(settings.gmail_cvs_label)
     result["job_messages_found"] = len(job_messages)
     result["cv_messages_found"] = len(cv_messages)
     _event(
@@ -71,7 +72,7 @@ def ingest_gmail_daily(session: Session) -> dict:
     for message in job_messages:
         _ingest_job_message(session, message, settings.gmail_jobs_label, result)
     for message in cv_messages:
-        _ingest_cv_message(session, message, settings.gmail_cvs_label, result)
+        _ingest_cv_message(session, client, message, settings.gmail_cvs_label, result)
     return result
 
 
@@ -110,13 +111,14 @@ def _ingest_job_message(
 
 
 def _ingest_cv_message(
-    session: Session, message: GmailMessage, label: str, result: dict
+    session: Session,
+    client: GmailClient,
+    message: GmailMessage,
+    label: str,
+    result: dict,
 ) -> None:
-    if _message_already_processed(session, message.id, label, "candidate"):
-        result["duplicates_skipped"] += 1
-        _event(result, "cv_message_skipped_duplicate", message=message)
-        return
     accepted = 0
+    supported = 0
     _event(
         result,
         "cv_message_scan_started",
@@ -135,6 +137,7 @@ def _ingest_cv_message(
                 detail=f"{attachment.filename} ({suffix or 'no extension'})",
             )
             continue
+        supported += 1
         result["supported_attachments_found"] += 1
         if _attachment_already_processed(session, message.id, attachment.attachment_id):
             result["duplicates_skipped"] += 1
@@ -147,6 +150,31 @@ def _ingest_cv_message(
             continue
         temporary_path: Path | None = None
         try:
+            content = attachment.content or client.download_attachment(
+                message.id, attachment.attachment_id
+            )
+            duplicate_file = session.exec(
+                select(CandidateFile).where(CandidateFile.file_hash == sha256_bytes(content))
+            ).first()
+            if duplicate_file and duplicate_file.candidate_id:
+                _log(
+                    session,
+                    label,
+                    message.id,
+                    attachment.attachment_id,
+                    "candidate",
+                    duplicate_file.candidate_id,
+                    "success",
+                    f"{attachment.filename} -> existing CV {duplicate_file.id}",
+                )
+                result["duplicates_skipped"] += 1
+                _event(
+                    result,
+                    "attachment_skipped_existing_cv",
+                    message=message,
+                    detail=attachment.filename,
+                )
+                continue
             _event(
                 result,
                 "cv_ingestion_started",
@@ -154,7 +182,7 @@ def _ingest_cv_message(
                 detail=f"{attachment.filename}; LLM enabled: {openai_enabled()}",
             )
             with NamedTemporaryFile(delete=False, suffix=suffix) as temporary_file:
-                temporary_file.write(attachment.content)
+                temporary_file.write(content)
                 temporary_path = Path(temporary_file.name)
             candidate_id, candidate_file_id = ingest_cv_file(
                 session=session,
@@ -202,7 +230,7 @@ def _ingest_cv_message(
         finally:
             if temporary_path:
                 temporary_path.unlink(missing_ok=True)
-    if accepted == 0:
+    if supported == 0:
         _log(session, label, message.id, None, "candidate", None, "skipped", "No supported CV attachments")
         _event(result, "cv_message_no_supported_attachments", message=message)
 

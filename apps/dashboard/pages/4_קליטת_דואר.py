@@ -34,7 +34,7 @@ with st.expander("סריקה יומית של Gmail", expanded=True):
     if st.button("סריקת Gmail כעת", type="primary"):
         try:
             with st.spinner("סורק תוויות Gmail ומעבד הודעות נתמכות..."):
-                result = post_empty("/ingestion/gmail/daily")
+                result = post_empty("/ingestion/gmail/daily", timeout=1800)
 
             if not result.get("enabled"):
                 st.warning("קליטת Gmail אינה פעילה.")

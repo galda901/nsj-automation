@@ -200,6 +200,7 @@ def download_latest_cv(
     return FileResponse(path, filename=candidate_file.original_filename)
 
 
+@router.get("/{candidate_id}/latest-cv/open")
 @router.post("/{candidate_id}/latest-cv/open")
 def open_latest_cv(candidate_id: str, session: Session = Depends(get_session)) -> dict:
     candidate_file = latest_candidate_file(session, candidate_id)

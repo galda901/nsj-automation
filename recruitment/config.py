@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     cv_raw_dir: Path = Path("./data/cv_raw")
     cv_text_dir: Path = Path("./data/cv_text")
     export_dir: Path = Path("./data/exports")
+    tesseract_cmd: Path | None = None
+    tesseract_languages: str = "heb+eng"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     dashboard_api_base_url: str = "http://127.0.0.1:8000"
