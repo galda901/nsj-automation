@@ -13,17 +13,11 @@ from apps.dashboard.ui import apply_rtl
 
 STATUS_LABELS = {
     "new": "חדש",
-    "active": "פעיל",
-    "submitted": "נשלח",
-    "rejected": "נדחה",
-    "hired": "התקבל",
-}
-SENIORITY_LABELS = {
-    "junior": "ג'וניור",
-    "mid": "ביניים",
-    "senior": "בכיר",
-    "lead": "מוביל",
-    "manager": "מנהל",
+    "reference_check": "שיחת ממליצים",
+    "submitted_to_client": "הועבר ללקוח",
+    "interview_passed": "עבר ראיון",
+    "awaiting_response": "ממתין לתשובה",
+    "not_relevant": "לא רלוונטי",
 }
 
 
@@ -40,10 +34,7 @@ def changed_candidates(edited: pd.DataFrame, original: pd.DataFrame) -> list[tup
         "דוא״ל": "email",
         "טלפון": "phone",
         "עיר": "city",
-        "מדינה": "country",
         "תפקיד": "current_title",
-        "ותק": "seniority",
-        "שנות ניסיון": "total_years_experience",
         "סטטוס": "status",
         "תקציר": "ai_summary",
     }
@@ -56,8 +47,6 @@ def changed_candidates(edited: pd.DataFrame, original: pd.DataFrame) -> list[tup
             api_field: (
                 {value: key for key, value in STATUS_LABELS.items()}.get(clean_value(row[column]), clean_value(row[column]))
                 if api_field == "status"
-                else {value: key for key, value in SENIORITY_LABELS.items()}.get(clean_value(row[column]), clean_value(row[column]))
-                if api_field == "seniority"
                 else clean_value(row[column])
             )
             for column, api_field in field_map.items()
@@ -93,10 +82,7 @@ try:
                 "הערות": frame["comments"],
                 "תקציר": frame["ai_summary"],
                 "סטטוס": frame["status"].map(lambda value: STATUS_LABELS.get(value, value)),
-                "שנות ניסיון": frame["total_years_experience"],
-                "ותק": frame["seniority"].map(lambda value: SENIORITY_LABELS.get(value, value)),
                 "תפקיד": frame["current_title"],
-                "מדינה": frame["country"],
                 "עיר": frame["city"],
                 "טלפון": frame["phone"],
                 "דוא״ל": frame["email"],
@@ -112,11 +98,9 @@ try:
             key="candidate-editor",
             column_config={
                 "id": None,
-                "שנות ניסיון": st.column_config.NumberColumn(min_value=0.0, step=0.5),
                 "סטטוס": st.column_config.SelectboxColumn(
                     options=list(STATUS_LABELS.values())
                 ),
-                "ותק": st.column_config.SelectboxColumn(options=list(SENIORITY_LABELS.values())),
                 "תקציר": st.column_config.TextColumn(width="large"),
                 "הערות": st.column_config.TextColumn(width="medium"),
             },

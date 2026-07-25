@@ -81,10 +81,10 @@ def test_api_candidate_job_ingestion_and_matching(tmp_path: Path) -> None:
             assert client.get(f"/candidates/{candidate_id}").status_code == 200
             updated_candidate = client.patch(
                 f"/candidates/{candidate_id}",
-                json={"status": "active", "ai_summary": "FastAPI specialist", "comments": "שיחת היכרות ביום א׳"},
+                json={"status": "reference_check", "ai_summary": "FastAPI specialist", "comments": "שיחת היכרות ביום א׳"},
             )
             assert updated_candidate.status_code == 200
-            assert updated_candidate.json()["status"] == "active"
+            assert updated_candidate.json()["status"] == "reference_check"
             assert updated_candidate.json()["ai_summary"] == "FastAPI specialist"
             assert updated_candidate.json()["comments"] == "שיחת היכרות ביום א׳"
             updated_job = client.patch(
@@ -102,5 +102,11 @@ def test_api_candidate_job_ingestion_and_matching(tmp_path: Path) -> None:
             )
             assert updated_match.status_code == 200
             assert updated_match.json()["hard_filter_passed"] is False
+            application = client.post(
+                "/applications",
+                json={"candidate_id": candidate_id, "job_id": job.json()["id"]},
+            )
+            assert application.status_code == 201
+            assert application.json()["candidate_id"] == candidate_id
     finally:
         app.dependency_overrides.clear()

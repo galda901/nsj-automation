@@ -6,6 +6,14 @@ from apps.dashboard.ui import apply_rtl
 
 
 STATUS_LABELS = {"draft": "טיוטה", "open": "פתוחה", "closed": "סגורה"}
+CANDIDATE_STATUS_LABELS = {
+    "new": "חדש",
+    "reference_check": "שיחת ממליצים",
+    "submitted_to_client": "הועבר ללקוח",
+    "interview_passed": "עבר ראיון",
+    "awaiting_response": "ממתין לתשובה",
+    "not_relevant": "לא רלוונטי",
+}
 SENIORITY_LABELS = {
     "junior": "ג'וניור",
     "mid": "ביניים",
@@ -13,6 +21,8 @@ SENIORITY_LABELS = {
     "lead": "מוביל",
     "manager": "מנהל",
 }
+PROCESS_CLOSED_STATUSES = {"closed", "rejected", "withdrawn", "hired"}
+NOT_RELEVANT_STATUS = "not_relevant"
 
 
 def clean_value(value: object) -> object:
@@ -58,6 +68,27 @@ def fallback_summary(description: object) -> str:
     return text if len(text) <= 300 else f"{text[:299].rstrip()}…"
 
 
+def candidates_in_progress_by_job(
+    applications: list[dict], candidates: list[dict]
+) -> dict[str, str]:
+    """Format the active candidate processes for the read-only jobs-table column."""
+    candidates_by_id = {candidate["id"]: candidate for candidate in candidates}
+    names_by_job: dict[str, list[str]] = {}
+    for application in applications:
+        job_id = application.get("job_id")
+        if not job_id or application.get("status") in PROCESS_CLOSED_STATUSES:
+            continue
+        candidate = candidates_by_id.get(application.get("candidate_id"))
+        if candidate is None or candidate.get("status") == NOT_RELEVANT_STATUS:
+            continue
+        name = candidate.get("full_name") or "מועמד/ת ללא שם"
+        candidate_status = CANDIDATE_STATUS_LABELS.get(
+            candidate.get("status"), candidate.get("status")
+        )
+        names_by_job.setdefault(job_id, []).append(f"{name} · {candidate_status}")
+    return {job_id: "\n".join(names) for job_id, names in names_by_job.items()}
+
+
 st.set_page_config(page_title="משרות", layout="wide")
 apply_rtl()
 st.title("משרות")
@@ -65,14 +96,18 @@ st.caption("אפשר לערוך משרות ישירות בטבלה. משרות �
 
 try:
     jobs = get_json("/jobs")
+    applications = get_json("/applications")
+    candidates = get_json("/candidates")
     frame = pd.DataFrame(jobs)
     if frame.empty:
         st.info("עדיין אין משרות. אפשר ליצור משרה חדשה בטופס למטה.")
     else:
+        candidates_in_progress = candidates_in_progress_by_job(applications, candidates)
         view = pd.DataFrame(
             {
                 "תיאור": frame["description"],
                 "תקציר": frame.get("summary", frame["description"].map(fallback_summary)),
+                "מועמדים בתהליך": frame["id"].map(candidates_in_progress).fillna(""),
                 "סטטוס": frame["status"].map(lambda value: STATUS_LABELS.get(value, value)),
                 "מינימום שנות ניסיון": frame["min_years_experience"],
                 "ותק": frame["seniority"].map(lambda value: SENIORITY_LABELS.get(value, value)),
@@ -87,8 +122,10 @@ try:
             hide_index=True,
             use_container_width=True,
             key="job-editor",
+            disabled=["מועמדים בתהליך"],
             column_config={
                 "id": None,
+                "מועמדים בתהליך": st.column_config.TextColumn(width="medium"),
                 "מינימום שנות ניסיון": st.column_config.NumberColumn(min_value=0.0, step=0.5),
                 "סטטוס": st.column_config.SelectboxColumn(options=list(STATUS_LABELS.values())),
                 "ותק": st.column_config.SelectboxColumn(options=list(SENIORITY_LABELS.values())),

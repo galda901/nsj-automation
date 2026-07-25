@@ -79,5 +79,38 @@ try:
                 "דרישות להשלמה": st.column_config.TextColumn(width="medium"),
             },
         )
+        applications = get_json("/applications")
+        active_candidate_ids = {
+            application["candidate_id"]
+            for application in applications
+            if application.get("job_id") == job_id
+            and application.get("status") not in {"closed", "rejected", "withdrawn", "hired"}
+        }
+        available_candidates = {
+            f"{candidate_field(candidate_id, 'full_name') or 'מועמד/ת ללא שם'} ({candidate_id})": candidate_id
+            for candidate_id in qualified["candidate_id"]
+            if candidate_id not in active_candidate_ids
+            and candidate_field(candidate_id, "status") != "not_relevant"
+        }
+        if available_candidates:
+            st.divider()
+            st.caption("הוספת מועמד/ת לתהליך תקשר אותו למשרה ותציג אותו בעמוד המשרות.")
+            candidate_to_add = st.selectbox(
+                "מועמד/ת להוספה לתהליך", list(available_candidates)
+            )
+            if st.button("הוספה לתהליך", type="primary"):
+                try:
+                    post_json(
+                        "/applications",
+                        {
+                            "candidate_id": available_candidates[candidate_to_add],
+                            "job_id": job_id,
+                            "source": "matching",
+                        },
+                    )
+                    st.success("המועמד/ת נוספ/ה לתהליך במשרה זו.")
+                    st.rerun()
+                except Exception as error:
+                    st.error(api_error_message(error))
 except Exception as error:
     st.error(api_error_message(error))
