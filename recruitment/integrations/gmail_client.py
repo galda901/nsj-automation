@@ -10,6 +10,7 @@ from recruitment.config import get_settings
 class GmailAttachment:
     filename: str
     attachment_id: str
+    size_bytes: int | None = None
     content: bytes | None = None
 
 
@@ -38,13 +39,20 @@ class GmailClient:
         return self.list_messages_by_labels([label_name], lookback_days)
 
     def list_all_messages_by_label(self, label_name: str) -> list[GmailMessage]:
-        """List every message in a label, across all Gmail result pages."""
-        return self.list_messages_by_labels([label_name], lookback_days=None)
+        """List every attachment-bearing message in a label, across all result pages."""
+        return self.list_all_messages_by_labels([label_name])
+
+    def list_all_messages_by_labels(self, label_names: list[str]) -> list[GmailMessage]:
+        """List attachment-bearing messages across labels, without duplicate messages."""
+        return self.list_messages_by_labels(
+            label_names, lookback_days=None, query="has:attachment"
+        )
 
     def list_messages_by_labels(
-        self, label_names: list[str], lookback_days: int | None
+        self, label_names: list[str], lookback_days: int | None, query: str | None = None
     ) -> list[GmailMessage]:
-        query = f"newer_than:{max(lookback_days, 1)}d" if lookback_days else None
+        if query is None and lookback_days:
+            query = f"newer_than:{max(lookback_days, 1)}d"
         message_refs_by_id: dict[str, dict] = {}
         for label_id in self.label_ids_for_names(label_names):
             for item in self._list_message_refs(label_id, query):
@@ -139,6 +147,7 @@ class GmailClient:
                 GmailAttachment(
                     filename=filename,
                     attachment_id=attachment_id,
+                    size_bytes=body.get("size"),
                 )
             )
         return attachments

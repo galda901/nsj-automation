@@ -45,7 +45,6 @@ def test_matching_reuses_saved_embeddings_until_the_entity_changes(monkeypatch) 
 
     monkeypatch.setattr(embeddings, "embedding_for_text", fake_embedding)
     monkeypatch.setattr(embeddings, "openai_enabled", lambda: False)
-    monkeypatch.setattr(matching_engine, "openai_enabled", lambda: False)
 
     with Session(engine) as session:
         candidate = Candidate(full_name="Ada", current_title="Python Engineer")

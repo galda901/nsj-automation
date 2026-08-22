@@ -6,6 +6,7 @@ from recruitment.models.candidate import now_utc
 from recruitment.models.job import JobPosition
 from recruitment.schemas.job_schema import JobCreate, JobRead, JobUpdate
 from recruitment.services.embeddings import upsert_embedding
+from recruitment.services.matching_engine import MATCHING_EMBEDDING_SOURCE, job_match_text
 from recruitment.services.summaries import summary_from_text
 
 router = APIRouter()
@@ -22,8 +23,8 @@ def create_job(payload: JobCreate, session: Session = Depends(get_session)) -> J
         session,
         owner_type="job",
         owner_id=job.id,
-        source_type="job_description",
-        text=f"{job.title}\n{job.description}",
+        source_type=MATCHING_EMBEDDING_SOURCE,
+        text=job_match_text(job),
     )
     session.commit()
     session.refresh(job)
@@ -67,8 +68,8 @@ def update_job(
         session,
         owner_type="job",
         owner_id=job.id,
-        source_type="job_description",
-        text=f"{job.title}\n{job.description}",
+        source_type=MATCHING_EMBEDDING_SOURCE,
+        text=job_match_text(job),
     )
     session.commit()
     session.refresh(job)

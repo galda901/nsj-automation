@@ -8,6 +8,7 @@ from recruitment.services.candidate_deduper import find_candidate_by_email
 from recruitment.services.cv_parser import parse_candidate_from_text
 from recruitment.services.cv_text_extractor import extract_text_from_file
 from recruitment.services.embeddings import upsert_embedding
+from recruitment.services.matching_engine import MATCHING_EMBEDDING_SOURCE, candidate_match_text
 from recruitment.utils.files import sha256_file
 from recruitment.utils.ids import new_id
 
@@ -77,7 +78,7 @@ def ingest_cv_file(
         session,
         owner_type="candidate",
         owner_id=candidate.id,
-        source_type="cv_text",
-        text=f"{candidate.full_name}\n{candidate.current_title or ''}\n{extracted_text}",
+        source_type=MATCHING_EMBEDDING_SOURCE,
+        text=candidate_match_text(candidate),
     )
     return candidate.id, candidate_file.id

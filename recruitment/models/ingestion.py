@@ -12,6 +12,7 @@ class IngestionLog(SQLModel, table=True):
     source_label: str | None = Field(default=None, index=True)
     source_message_id: str | None = Field(default=None, index=True)
     source_attachment_id: str | None = Field(default=None, index=True)
+    source_attachment_key: str | None = Field(default=None, index=True)
     entity_type: str | None = Field(default=None, index=True)
     entity_id: str | None = Field(default=None, index=True)
     status: str = Field(index=True)

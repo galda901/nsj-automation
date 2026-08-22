@@ -4,13 +4,14 @@ from tempfile import NamedTemporaryFile
 from sqlmodel import Session, select
 
 from recruitment.config import get_settings
-from recruitment.integrations.gmail_client import GmailClient, GmailMessage
+from recruitment.integrations.gmail_client import GmailAttachment, GmailClient, GmailMessage
 from recruitment.integrations.openai_client import openai_enabled
 from recruitment.models.ingestion import IngestionLog
 from recruitment.models.candidate import CandidateFile
 from recruitment.services.cv_ingestion import ingest_cv_file
 from recruitment.services.cv_text_extractor import SUPPORTED_SUFFIXES
 from recruitment.services.embeddings import upsert_embedding
+from recruitment.services.matching_engine import MATCHING_EMBEDDING_SOURCE, job_match_text
 from recruitment.services.job_parser import parse_job_from_email
 from recruitment.utils.files import sha256_bytes
 
@@ -55,13 +56,13 @@ def ingest_gmail_daily(session: Session) -> dict:
         detail=(
             f"Scanning job label '{settings.gmail_jobs_label}' for the last "
             f"{settings.gmail_lookback_days} days and every message in CV label "
-            f"'{settings.gmail_cvs_label}'"
+            f"'{settings.gmail_cvs_label}' plus the Inbox"
         ),
     )
     job_messages = client.list_messages_by_label(
         settings.gmail_jobs_label, settings.gmail_lookback_days
     )
-    cv_messages = client.list_all_messages_by_label(settings.gmail_cvs_label)
+    cv_messages = client.list_all_messages_by_labels([settings.gmail_cvs_label, "INBOX"])
     result["job_messages_found"] = len(job_messages)
     result["cv_messages_found"] = len(cv_messages)
     _event(
@@ -98,8 +99,8 @@ def _ingest_job_message(
             session,
             owner_type="job",
             owner_id=job.id,
-            source_type="job_description",
-            text=f"{job.title}\n{job.description}",
+            source_type=MATCHING_EMBEDDING_SOURCE,
+            text=job_match_text(job),
         )
         _log(session, label, message.id, None, "job", job.id, "success", message.subject)
         result["jobs_drafted"] += 1
@@ -139,7 +140,7 @@ def _ingest_cv_message(
             continue
         supported += 1
         result["supported_attachments_found"] += 1
-        if _attachment_already_processed(session, message.id, attachment.attachment_id):
+        if _attachment_already_processed(session, message.id, attachment):
             result["duplicates_skipped"] += 1
             _event(
                 result,
@@ -166,6 +167,7 @@ def _ingest_cv_message(
                     duplicate_file.candidate_id,
                     "success",
                     f"{attachment.filename} -> existing CV {duplicate_file.id}",
+                    attachment_key=_attachment_key(attachment),
                 )
                 result["duplicates_skipped"] += 1
                 _event(
@@ -200,6 +202,7 @@ def _ingest_cv_message(
                 candidate_id,
                 "success",
                 f"{attachment.filename} -> {candidate_file_id}",
+                attachment_key=_attachment_key(attachment),
             )
             accepted += 1
             result["cvs_ingested"] += 1
@@ -219,6 +222,7 @@ def _ingest_cv_message(
                 None,
                 "error",
                 f"{attachment.filename}: {error}",
+                attachment_key=_attachment_key(attachment),
             )
             result["errors"].append(f"CV email {message.id}: {attachment.filename}: {error}")
             _event(
@@ -253,19 +257,29 @@ def _message_already_processed(
 
 
 def _attachment_already_processed(
-    session: Session, message_id: str, attachment_id: str
+    session: Session, message_id: str, attachment: GmailAttachment
 ) -> bool:
-    return (
-        session.exec(
-            select(IngestionLog).where(
-                IngestionLog.source == "gmail",
-                IngestionLog.source_message_id == message_id,
-                IngestionLog.source_attachment_id == attachment_id,
-                IngestionLog.status == "success",
-            )
-        ).first()
-        is not None
+    successful_logs = session.exec(
+        select(IngestionLog).where(
+            IngestionLog.source == "gmail",
+            IngestionLog.source_message_id == message_id,
+            IngestionLog.entity_type == "candidate",
+            IngestionLog.status == "success",
+        )
+    ).all()
+    stable_key = _attachment_key(attachment)
+    return any(
+        log.source_attachment_key == stable_key
+        or (
+            log.source_attachment_key is None
+            and (log.detail or "").startswith(f"{attachment.filename} ->")
+        )
+        for log in successful_logs
     )
+
+
+def _attachment_key(attachment: GmailAttachment) -> str:
+    return f"{attachment.filename}\x1f{attachment.size_bytes or ''}"
 
 
 def _log(
@@ -277,6 +291,7 @@ def _log(
     entity_id: str | None,
     status: str,
     detail: str,
+    attachment_key: str | None = None,
 ) -> None:
     session.add(
         IngestionLog(
@@ -284,6 +299,7 @@ def _log(
             source_label=label,
             source_message_id=message_id,
             source_attachment_id=attachment_id,
+            source_attachment_key=attachment_key,
             entity_type=entity_type,
             entity_id=entity_id,
             status=status,

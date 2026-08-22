@@ -4,6 +4,7 @@ import streamlit as st
 from apps.dashboard.api_client import (
     API_BASE_URL,
     api_error_message,
+    delete_json,
     get_json,
     patch_json,
 )
@@ -26,10 +27,11 @@ def clean_value(value: object) -> object:
     return value.strip() if isinstance(value, str) else value
 
 
-def changed_candidates(edited: pd.DataFrame, original: pd.DataFrame) -> list[tuple[str, dict]]:
+def changed_candidates(
+    edited: pd.DataFrame, original: pd.DataFrame
+) -> list[tuple[str, dict]]:
     field_map = {
         "הערות": "comments",
-        "שם": "full_name",
         "דוא״ל": "email",
         "טלפון": "phone",
         "עיר": "city",
@@ -44,7 +46,9 @@ def changed_candidates(edited: pd.DataFrame, original: pd.DataFrame) -> list[tup
         before = original_by_id.loc[candidate_id]
         payload = {
             api_field: (
-                {value: key for key, value in STATUS_LABELS.items()}.get(clean_value(row[column]), clean_value(row[column]))
+                {value: key for key, value in STATUS_LABELS.items()}.get(
+                    clean_value(row[column]), clean_value(row[column])
+                )
                 if api_field == "status"
                 else clean_value(row[column])
             )
@@ -60,11 +64,12 @@ def filter_visible_candidates(view: pd.DataFrame, query: str) -> pd.DataFrame:
     term = query.strip()
     if not term:
         return view
-    searchable = view.drop(columns=["id", "קורות חיים"], errors="ignore").fillna("")
+    searchable = view.drop(columns=["id"], errors="ignore").fillna("")
     matches = searchable.astype(str).apply(
         lambda column: column.str.contains(term, case=False, regex=False)
     )
     return view.loc[matches.any(axis=1)]
+
 
 st.set_page_config(page_title="מועמדים", layout="wide")
 apply_rtl()
@@ -107,21 +112,23 @@ try:
                 "נקלט בתאריך": pd.to_datetime(frame["created_at"]).dt.strftime(
                     "%d/%m/%Y %H:%M"
                 ),
-                "קורות חיים": frame.apply(
-                    lambda row: (
-                        f"{API_BASE_URL}/candidates/{row['id']}/latest-cv/open"
-                        if row["latest_cv_path"]
-                        else None
-                    ),
-                    axis=1,
+                "סטטוס": frame["status"].map(
+                    lambda value: STATUS_LABELS.get(value, value)
                 ),
-                "סטטוס": frame["status"].map(lambda value: STATUS_LABELS.get(value, value)),
                 "תפקיד": frame["current_title"],
                 "עיר": frame["city"],
                 "טלפון": frame["phone"],
                 "דוא״ל": frame["email"],
-                "שם": frame["full_name"],
+                "מחיקה": False,
                 "id": frame["id"],
+                "שם": frame.apply(
+                    lambda row: (
+                        f"{API_BASE_URL}/candidates/{row['id']}/latest-cv/open#{row['full_name']}"
+                        if row["latest_cv_path"]
+                        else row["full_name"]
+                    ),
+                    axis=1,
+                ),
             }
         )
         st.caption("אפשר לערוך תא ולשמור את השינויים ישירות למסד הנתונים.")
@@ -133,13 +140,14 @@ try:
             hide_index=True,
             use_container_width=True,
             key="candidate-editor",
-            disabled=["נקלט בתאריך", "קורות חיים"],
+            disabled=["נקלט בתאריך", "שם"],
             column_config={
                 "id": None,
-                "נקלט בתאריך": st.column_config.TextColumn(width="small"),
-                "קורות חיים": st.column_config.LinkColumn(
-                    "קורות חיים", display_text="פתיחה"
+                "מחיקה": st.column_config.CheckboxColumn(
+                    "מחיקה", help="סמנו מועמד/ת למחיקה לצמיתות"
                 ),
+                "נקלט בתאריך": st.column_config.TextColumn(width="small"),
+                "שם": st.column_config.LinkColumn("שם", display_text=r"#(.*)"),
                 "סטטוס": st.column_config.SelectboxColumn(
                     options=list(STATUS_LABELS.values())
                 ),
@@ -156,6 +164,35 @@ try:
                     for candidate_id, payload in changes:
                         patch_json(f"/candidates/{candidate_id}", payload)
                     st.success(f"נשמרו שינויים ב־{len(changes)} מועמדים.")
+                    st.rerun()
+                except Exception as error:
+                    st.error(api_error_message(error))
+        selected_candidate_ids = edited.loc[
+            edited["מחיקה"].fillna(False).astype(bool), "id"
+        ].tolist()
+        if selected_candidate_ids:
+            candidate_names = frame.set_index("id")["full_name"].to_dict()
+            selected_names = ", ".join(
+                str(candidate_names.get(candidate_id, candidate_id))
+                for candidate_id in selected_candidate_ids
+            )
+            st.warning(f"המחיקה לצמיתות תסיר גם את הנתונים המקושרים: {selected_names}")
+            confirmation_key = (
+                f"candidate-delete-confirmation-{','.join(selected_candidate_ids)}"
+            )
+            confirmed = st.checkbox(
+                "אני מאשר/ת את המחיקה לצמיתות",
+                key=confirmation_key,
+            )
+            if st.button(
+                "מחיקת מועמדים מסומנים",
+                type="secondary",
+                disabled=not confirmed,
+            ):
+                try:
+                    for candidate_id in selected_candidate_ids:
+                        delete_json(f"/candidates/{candidate_id}")
+                    st.success(f"נמחקו {len(selected_candidate_ids)} מועמדים.")
                     st.rerun()
                 except Exception as error:
                     st.error(api_error_message(error))

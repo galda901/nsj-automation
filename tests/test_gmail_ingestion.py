@@ -10,6 +10,7 @@ class FakeGmailClient:
     def __init__(self, messages: list[GmailMessage]) -> None:
         self.messages = messages
         self.all_messages_calls = 0
+        self.cv_label_requests: list[list[str]] = []
         self.downloaded_attachment_ids: list[str] = []
 
     def label_names(self) -> list[str]:
@@ -20,6 +21,11 @@ class FakeGmailClient:
 
     def list_all_messages_by_label(self, _: str) -> list[GmailMessage]:
         self.all_messages_calls += 1
+        return self.messages
+
+    def list_all_messages_by_labels(self, labels: list[str]) -> list[GmailMessage]:
+        self.all_messages_calls += 1
+        self.cv_label_requests.append(labels)
         return self.messages
 
     def download_attachment(self, _: str, attachment_id: str) -> bytes:
@@ -61,13 +67,25 @@ def test_gmail_cv_sync_retries_only_failed_attachments(monkeypatch) -> None:
     with Session(engine) as session:
         first_run = email_ingestion.ingest_gmail_daily(session)
         session.commit()
+        client.messages = [
+            GmailMessage(
+                id="message-1",
+                subject="CVs",
+                body="",
+                attachments=[
+                    GmailAttachment(filename="first.txt", attachment_id="new-attachment-1"),
+                    GmailAttachment(filename="second.txt", attachment_id="new-attachment-2"),
+                ],
+            )
+        ]
         second_run = email_ingestion.ingest_gmail_daily(session)
 
     assert first_run["cvs_ingested"] == 1
     assert len(first_run["errors"]) == 1
     assert second_run["cvs_ingested"] == 1
     assert client.all_messages_calls == 2
-    assert client.downloaded_attachment_ids == ["attachment-1", "attachment-2", "attachment-2"]
+    assert client.cv_label_requests == [["CVs", "INBOX"], ["CVs", "INBOX"]]
+    assert client.downloaded_attachment_ids == ["attachment-1", "attachment-2", "new-attachment-2"]
 
 
 def test_gmail_client_lists_all_pages_without_a_date_query() -> None:
@@ -108,3 +126,19 @@ def test_gmail_client_lists_all_pages_without_a_date_query() -> None:
 
     assert client._list_message_refs("label-1", query=None) == [{"id": "one"}, {"id": "two"}]
     assert all("q" not in call for call in messages.calls)
+
+
+def test_gmail_cv_listing_filters_for_attachments(monkeypatch) -> None:
+    client = object.__new__(GmailClient)
+    captured: dict[str, object] = {}
+
+    def list_refs(_: str, query: str | None) -> list[dict]:
+        captured["query"] = query
+        return []
+
+    monkeypatch.setattr(client, "label_ids_for_names", lambda _: ["label-1"])
+    monkeypatch.setattr(client, "_list_message_refs", list_refs)
+    monkeypatch.setattr(client, "get_message", lambda _: None)
+
+    assert client.list_all_messages_by_label("CVs") == []
+    assert captured["query"] == "has:attachment"

@@ -10,7 +10,7 @@ JOB_STATUS_LABELS = {"draft": "טיוטה", "open": "פתוחה"}
 st.set_page_config(page_title="התאמות", layout="wide")
 apply_rtl()
 st.title("התאמות מועמדים")
-st.caption("מוצגים רק מועמדים שה-AI זיהה כהתאמה סבירה. ההחלטה נשארת בידי המגייס/ת.")
+st.caption("מוצגות התאמות המבוססות על דמיון וקטורי וחישוב מקומי. ההחלטה נשארת בידי המגייס/ת.")
 
 try:
     jobs = [job for job in get_json("/jobs") if job.get("status") != "closed"]
@@ -37,7 +37,6 @@ try:
     else:
         qualified = frame[
             frame["hard_filter_passed"].fillna(False)
-            & frame["ai_score"].notna()
             & frame["explanation"].fillna("").str.strip().ne("")
         ].copy()
         if qualified.empty:

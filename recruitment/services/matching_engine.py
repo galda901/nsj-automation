@@ -2,7 +2,6 @@ import re
 
 from sqlmodel import Session, select
 
-from recruitment.integrations.openai_client import explain_match, openai_enabled
 from recruitment.models.candidate import Candidate, now_utc
 from recruitment.models.job import JobPosition
 from recruitment.models.match import MatchResult
@@ -30,19 +29,6 @@ def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]
     for candidate, vector_score in candidates:
         deterministic_score, explanation = basic_candidate_score(candidate, job)
         score = round(min((deterministic_score * 0.65) + (vector_score * 35.0), 100.0), 1)
-        risks = None
-        missing = None
-        ai_score = None
-        if openai_enabled():
-            try:
-                match_payload = explain_match(job_match_text(job), candidate_match_text(candidate))
-                ai_score = float(match_payload.get("ai_score") or 0)
-                explanation = match_payload.get("explanation") or explanation
-                risks = match_payload.get("risks")
-                missing = match_payload.get("missing_requirements")
-                score = round(min((score * 0.7) + (ai_score * 0.3), 100.0), 1)
-            except Exception:
-                pass
         existing = session.exec(
             select(MatchResult).where(
                 MatchResult.job_id == job.id,
@@ -53,13 +39,12 @@ def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]
             job_id=job.id, candidate_id=candidate.id, total_score=score
         )
         result.total_score = score
-        result.hard_filter_passed = (
-            ai_score is not None and ai_score >= MATCH_QUALIFICATION_THRESHOLD
-        )
-        result.ai_score = ai_score
+        # Matching is deliberately local after embeddings are available.
+        result.hard_filter_passed = score >= MATCH_QUALIFICATION_THRESHOLD
+        result.ai_score = None
         result.explanation = explanation
-        result.risks = risks
-        result.missing_requirements = missing
+        result.risks = None
+        result.missing_requirements = None
         result.created_at = now_utc()
         session.add(result)
         results.append(result)
@@ -98,15 +83,16 @@ def retrieved_candidates_for_job(
             text=candidate_match_text(candidate),
         )
     session.flush()
-    candidate_embeddings = {
-        record.owner_id: record
-        for record in session.exec(
-            select(EmbeddingRecord).where(
-                EmbeddingRecord.owner_type == "candidate",
-                EmbeddingRecord.source_type == MATCHING_EMBEDDING_SOURCE,
-            )
-        ).all()
-    }
+    candidate_embeddings: dict[str, EmbeddingRecord] = {}
+    for record in session.exec(
+        select(EmbeddingRecord)
+        .where(
+            EmbeddingRecord.owner_type == "candidate",
+            EmbeddingRecord.source_type == MATCHING_EMBEDDING_SOURCE,
+        )
+        .order_by(EmbeddingRecord.created_at.desc())
+    ).all():
+        candidate_embeddings.setdefault(record.owner_id, record)
     for candidate in candidates:
         record = candidate_embeddings.get(candidate.id)
         if record is not None:

@@ -52,6 +52,10 @@ description.
 
 Embeddings are stored in SQLite table `EmbeddingRecord`.
 
+Matching embeddings are cached by owner and a SHA-256 hash of the matching
+text. Re-running a match for an unchanged candidate or job reuses the stored
+vector; a new embedding is created only when that matching text changes.
+
 Each record stores:
 
 - owner type: `candidate` or `job`;
@@ -75,7 +79,6 @@ job
     -> ensure job embedding exists
     -> find closest candidate embeddings
     -> score top candidates deterministically
-    -> optionally call OpenAI for match explanation
     -> store MatchResult
 ```
 
@@ -85,7 +88,9 @@ The deterministic score considers:
 - seniority match;
 - minimum years of experience coverage.
 
-OpenAI explanations are optional and do not replace human review.
+The matching comparison and scoring are local after the vectors exist, so
+running matching does not call OpenAI. CV/job extraction and the initial
+embedding for new or changed text may still use OpenAI.
 
 ## Important limitation
 

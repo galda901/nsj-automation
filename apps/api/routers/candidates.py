@@ -4,10 +4,14 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from recruitment.database import get_session
-from recruitment.models.candidate import Candidate, CandidateFile, now_utc
+from recruitment.models.application import Application
+from recruitment.models.candidate import Candidate, CandidateFile, CandidateSkill, now_utc
+from recruitment.models.interaction import Interaction
+from recruitment.models.match import MatchResult
+from recruitment.models.vector import EmbeddingRecord
 from recruitment.schemas.candidate_schema import CandidateCreate, CandidateRead, CandidateUpdate
 from recruitment.services.cv_parser import parse_candidate_from_text
 from recruitment.services.candidate_formatting import (
@@ -17,6 +21,7 @@ from recruitment.services.candidate_formatting import (
     normalize_phone,
 )
 from recruitment.services.embeddings import upsert_embedding
+from recruitment.services.matching_engine import MATCHING_EMBEDDING_SOURCE, candidate_match_text
 
 router = APIRouter()
 
@@ -33,8 +38,8 @@ def create_candidate(
         session,
         owner_type="candidate",
         owner_id=candidate.id,
-        source_type="candidate_profile",
-        text=f"{candidate.full_name}\n{candidate.current_title or ''}\n{candidate.ai_summary or ''}",
+        source_type=MATCHING_EMBEDDING_SOURCE,
+        text=candidate_match_text(candidate),
     )
     session.commit()
     session.refresh(candidate)
@@ -107,12 +112,34 @@ def update_candidate(
         session,
         owner_type="candidate",
         owner_id=candidate.id,
-        source_type="candidate_profile",
-        text=f"{candidate.full_name}\n{candidate.current_title or ''}\n{candidate.ai_summary or ''}",
+        source_type=MATCHING_EMBEDDING_SOURCE,
+        text=candidate_match_text(candidate),
     )
     session.commit()
     session.refresh(candidate)
     return candidate
+
+
+@router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_candidate(candidate_id: str, session: Session = Depends(get_session)) -> None:
+    candidate = session.get(Candidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    # Remove records that reference the candidate before removing the candidate row.
+    session.exec(delete(Application).where(Application.candidate_id == candidate_id))
+    session.exec(delete(MatchResult).where(MatchResult.candidate_id == candidate_id))
+    session.exec(delete(Interaction).where(Interaction.candidate_id == candidate_id))
+    session.exec(delete(CandidateSkill).where(CandidateSkill.candidate_id == candidate_id))
+    session.exec(delete(CandidateFile).where(CandidateFile.candidate_id == candidate_id))
+    session.exec(
+        delete(EmbeddingRecord).where(
+            EmbeddingRecord.owner_type == "candidate",
+            EmbeddingRecord.owner_id == candidate_id,
+        )
+    )
+    session.delete(candidate)
+    session.commit()
 
 
 def _normalize_candidate_profile(candidate: Candidate) -> None:
@@ -166,8 +193,8 @@ def refresh_candidate_with_ai(
         session,
         owner_type="candidate",
         owner_id=candidate.id,
-        source_type="candidate_profile",
-        text=f"{candidate.full_name}\n{candidate.current_title or ''}\n{candidate.ai_summary or ''}",
+        source_type=MATCHING_EMBEDDING_SOURCE,
+        text=candidate_match_text(candidate),
     )
     session.commit()
     session.refresh(candidate)

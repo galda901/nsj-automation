@@ -72,7 +72,6 @@ Open job
     -> job embedding
     -> retrieve closest candidate embeddings
     -> deterministic scoring
-    -> optional OpenAI explanation/re-ranking
     -> MatchResult rows
 ```
 

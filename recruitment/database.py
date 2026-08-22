@@ -25,12 +25,18 @@ def _apply_sqlite_migrations() -> None:
     inspector = inspect(engine)
     job_columns = {column["name"] for column in inspector.get_columns("jobposition")}
     candidate_columns = {column["name"] for column in inspector.get_columns("candidate")}
+    ingestion_columns = {column["name"] for column in inspector.get_columns("ingestionlog")}
     if "summary" not in job_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE jobposition ADD COLUMN summary VARCHAR"))
     if "comments" not in candidate_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE candidate ADD COLUMN comments VARCHAR"))
+    if "source_attachment_key" not in ingestion_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE ingestionlog ADD COLUMN source_attachment_key VARCHAR")
+            )
 
 
 def get_session() -> Generator[Session, None, None]:

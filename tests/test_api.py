@@ -108,5 +108,11 @@ def test_api_candidate_job_ingestion_and_matching(tmp_path: Path) -> None:
             )
             assert application.status_code == 201
             assert application.json()["candidate_id"] == candidate_id
+            deleted = client.delete(f"/candidates/{candidate_id}")
+            assert deleted.status_code == 204
+            assert client.get(f"/candidates/{candidate_id}").status_code == 404
+            assert client.get(f"/candidates/{candidate_id}/files").json() == []
+            assert client.get("/applications").json() == []
+            assert client.get(f"/matching/jobs/{job.json()['id']}").json() == []
     finally:
         app.dependency_overrides.clear()

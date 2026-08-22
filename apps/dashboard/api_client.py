@@ -23,6 +23,12 @@ def patch_json(path: str, payload: dict) -> object:
     return response.json()
 
 
+def delete_json(path: str) -> object | None:
+    response = httpx.delete(f"{API_BASE_URL}{path}", timeout=30)
+    response.raise_for_status()
+    return response.json() if response.content else None
+
+
 def post_empty(path: str, timeout: float = 120) -> object:
     response = httpx.post(f"{API_BASE_URL}{path}", timeout=timeout)
     response.raise_for_status()
