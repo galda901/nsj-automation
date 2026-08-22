@@ -8,6 +8,7 @@ from recruitment.database import get_session
 from recruitment.models.candidate import Candidate, CandidateFile, now_utc
 from recruitment.models.ingestion import IngestionLog
 from recruitment.models.job import JobPosition
+from recruitment.models.notification import NotificationOutbox, WorkerState
 from recruitment.models.vector import EmbeddingRecord
 from recruitment.services.embeddings import upsert_embedding
 from recruitment.services.cv_parser import parse_candidate_from_text
@@ -44,6 +45,11 @@ def settings_snapshot() -> dict:
         "gmail_token_file_exists": (
             bool(settings.gmail_token_file) and settings.gmail_token_file.exists()
         ),
+        "worker_poll_seconds": settings.worker_poll_seconds,
+        "telegram_enabled": settings.telegram_enabled,
+        "telegram_dry_run": settings.telegram_dry_run,
+        "telegram_chat_id_configured": bool(settings.telegram_chat_id),
+        "telegram_bot_token_configured": bool(settings.telegram_bot_token),
     }
 
 
@@ -76,6 +82,28 @@ def rebuild_vectors(session: Session = Depends(get_session)) -> dict:
 def list_ingestion_logs(session: Session = Depends(get_session)) -> list[IngestionLog]:
     return list(
         session.exec(select(IngestionLog).order_by(IngestionLog.created_at.desc())).all()
+    )
+
+
+@router.get("/worker-status")
+def worker_status(session: Session = Depends(get_session)) -> dict:
+    state = session.get(WorkerState, "gmail-matching-worker")
+    if state is None:
+        return {"id": "gmail-matching-worker", "status": "never_run"}
+    return state.model_dump(mode="json")
+
+
+@router.get("/telegram-notifications", response_model=list[NotificationOutbox])
+def list_telegram_notifications(
+    session: Session = Depends(get_session), limit: int = 100
+) -> list[NotificationOutbox]:
+    safe_limit = max(1, min(limit, 500))
+    return list(
+        session.exec(
+            select(NotificationOutbox)
+            .order_by(NotificationOutbox.created_at.desc())
+            .limit(safe_limit)
+        ).all()
     )
 
 

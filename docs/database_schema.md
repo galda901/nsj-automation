@@ -41,6 +41,7 @@ Stores the candidate profile:
 - languages;
 - salary/notice/remote preferences;
 - AI summary and parse confidence;
+- currently selected referred job;
 - status and timestamps.
 
 `CandidateFile`
@@ -95,6 +96,14 @@ Prepared for notes, calls, emails, and recruiter/client interactions.
 `EmbeddingRecord`
 
 Stores local vector embeddings for jobs and candidates.
+
+`NotificationOutbox`
+
+Stores deduplicated Telegram match alerts and their delivery/retry state.
+
+`WorkerState`
+
+Stores the latest background-worker status, timestamps, summary, and error.
 
 `IngestionLog`
 

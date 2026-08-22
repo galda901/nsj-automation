@@ -13,6 +13,7 @@ COLUMN_LABELS = {
     "seniority": "ותק",
     "total_years_experience": "שנות ניסיון",
     "status": "סטטוס",
+    "current_job_id": "משרה נוכחית",
     "ai_summary": "תקציר",
     "client_name": "לקוח",
     "title": "כותרת",
@@ -42,6 +43,14 @@ COLUMN_LABELS = {
     "source_label": "תווית מקור",
     "source_message_id": "מזהה הודעה",
     "source_attachment_id": "מזהה קובץ מצורף",
+    "candidate_name": "שם מועמד/ת",
+    "job_title": "שם משרה",
+    "score": "ציון התאמה",
+    "attempts": "ניסיונות שליחה",
+    "recipient": "Telegram chat ID",
+    "last_error": "שגיאה אחרונה",
+    "message_body": "תוכן הודעה",
+    "sent_at": "נשלח בתאריך",
 }
 
 
@@ -58,7 +67,10 @@ def apply_rtl() -> None:
         }
         [data-testid="stSidebarNav"] ul { direction: rtl; }
         [data-testid="stSidebarNav"] li a { justify-content: flex-start; }
-        input, textarea, [contenteditable="true"] { direction: rtl !important; text-align: right !important; }
+        input, textarea, select, [contenteditable="true"] {
+            direction: rtl !important;
+            text-align: right !important;
+        }
         [data-testid="stDataFrame"] [role="columnheader"],
         [data-testid="stDataEditor"] [role="columnheader"] { text-align: right !important; }
         </style>
@@ -71,4 +83,9 @@ def hebrew_columns(frame: pd.DataFrame) -> pd.DataFrame:
     translated = frame.rename(
         columns={column: COLUMN_LABELS.get(column, column) for column in frame.columns}
     )
-    return translated.loc[:, list(reversed(translated.columns))]
+    return rtl_columns(translated)
+
+
+def rtl_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Reverse already-labeled columns without changing technical column names."""
+    return frame.loc[:, list(reversed(frame.columns))]

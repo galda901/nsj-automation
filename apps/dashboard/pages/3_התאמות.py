@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from apps.dashboard.api_client import api_error_message, get_json, post_json
-from apps.dashboard.ui import apply_rtl
+from apps.dashboard.ui import apply_rtl, hebrew_columns
 
 
 JOB_STATUS_LABELS = {"draft": "טיוטה", "open": "פתוחה"}
@@ -66,7 +66,7 @@ try:
             }
         )
         st.dataframe(
-            view,
+            hebrew_columns(view),
             hide_index=True,
             use_container_width=True,
             column_config={

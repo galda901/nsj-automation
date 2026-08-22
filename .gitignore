@@ -12,6 +12,7 @@ data/sqlite/*.db*
 data/cv_raw/*
 data/cv_text/*
 data/exports/*
+data/worker.lock
 !data/cv_raw/.gitkeep
 !data/cv_text/.gitkeep
 !data/exports/.gitkeep

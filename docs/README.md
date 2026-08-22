@@ -11,8 +11,9 @@ Recommended reading order:
 3. [Dashboard guide](dashboard_guide.md)
 4. [Gmail ingestion](gmail_ingestion.md)
 5. [OpenAI and vector matching](openai_and_matching.md)
-6. [Database and files](database_schema.md)
-7. [Maintenance and troubleshooting](maintenance.md)
+6. [Background worker and Telegram alerts](background_worker.md)
+7. [Database and files](database_schema.md)
+8. [Maintenance and troubleshooting](maintenance.md)
 
 The current system is intentionally local-first: it runs on this PC, stores data
 in SQLite plus local folders, and keeps all decisions human-in-the-loop.

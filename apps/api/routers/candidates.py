@@ -10,7 +10,9 @@ from recruitment.database import get_session
 from recruitment.models.application import Application
 from recruitment.models.candidate import Candidate, CandidateFile, CandidateSkill, now_utc
 from recruitment.models.interaction import Interaction
+from recruitment.models.job import JobPosition
 from recruitment.models.match import MatchResult
+from recruitment.models.notification import NotificationOutbox
 from recruitment.models.vector import EmbeddingRecord
 from recruitment.schemas.candidate_schema import CandidateCreate, CandidateRead, CandidateUpdate
 from recruitment.services.cv_parser import parse_candidate_from_text
@@ -30,6 +32,7 @@ router = APIRouter()
 def create_candidate(
     payload: CandidateCreate, session: Session = Depends(get_session)
 ) -> Candidate:
+    _validate_current_job(payload.current_job_id, session)
     candidate = Candidate(**payload.model_dump())
     _normalize_candidate_profile(candidate)
     session.add(candidate)
@@ -102,6 +105,7 @@ def update_candidate(
     candidate = session.get(Candidate, candidate_id)
     if candidate is None:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    _validate_current_job(payload.current_job_id, session)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(candidate, field, value)
     _normalize_candidate_profile(candidate)
@@ -129,6 +133,11 @@ def delete_candidate(candidate_id: str, session: Session = Depends(get_session))
     # Remove records that reference the candidate before removing the candidate row.
     session.exec(delete(Application).where(Application.candidate_id == candidate_id))
     session.exec(delete(MatchResult).where(MatchResult.candidate_id == candidate_id))
+    session.exec(
+        delete(NotificationOutbox).where(
+            NotificationOutbox.candidate_id == candidate_id
+        )
+    )
     session.exec(delete(Interaction).where(Interaction.candidate_id == candidate_id))
     session.exec(delete(CandidateSkill).where(CandidateSkill.candidate_id == candidate_id))
     session.exec(delete(CandidateFile).where(CandidateFile.candidate_id == candidate_id))
@@ -147,6 +156,11 @@ def _normalize_candidate_profile(candidate: Candidate) -> None:
     candidate.city = normalize_city(candidate.city)
     candidate.country = normalize_country(candidate.country)
     candidate.current_title = normalize_current_title(candidate.current_title)
+
+
+def _validate_current_job(job_id: str | None, session: Session) -> None:
+    if job_id is not None and session.get(JobPosition, job_id) is None:
+        raise HTTPException(status_code=404, detail="Current job not found")
 
 
 @router.post("/{candidate_id}/refresh-ai", response_model=CandidateRead)

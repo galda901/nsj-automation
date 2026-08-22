@@ -74,6 +74,18 @@ Run Gmail ingestion from terminal:
 python -m scripts.ingest_gmail_daily
 ```
 
+Run the background worker once while verifying Gmail and Telegram configuration:
+
+```powershell
+python -m scripts.run_worker --once
+```
+
+Run it continuously (normally through Windows Task Scheduler):
+
+```powershell
+python -m scripts.run_worker
+```
+
 Set up Gmail OAuth token:
 
 ```powershell

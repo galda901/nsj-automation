@@ -122,6 +122,18 @@ try:
             hide_index=True,
             use_container_width=True,
             key="job-editor",
+            column_order=[
+                "id",
+                "תיאור",
+                "תקציר",
+                "מועמדים בתהליך",
+                "מינימום שנות ניסיון",
+                "ותק",
+                "מיקום",
+                "סטטוס",
+                "לקוח",
+                "שם המשרה",
+            ],
             disabled=["מועמדים בתהליך"],
             column_config={
                 "id": None,
@@ -129,8 +141,15 @@ try:
                 "מינימום שנות ניסיון": st.column_config.NumberColumn(min_value=0.0, step=0.5),
                 "סטטוס": st.column_config.SelectboxColumn(options=list(STATUS_LABELS.values())),
                 "ותק": st.column_config.SelectboxColumn(options=list(SENIORITY_LABELS.values())),
-                "תקציר": st.column_config.TextColumn(width="large"),
-                "תיאור": st.column_config.TextColumn(width="large"),
+                "לקוח": st.column_config.TextColumn(alignment="right"),
+                "שם המשרה": st.column_config.TextColumn(alignment="right"),
+                "מיקום": st.column_config.TextColumn(alignment="right"),
+                "תקציר": st.column_config.TextColumn(
+                    width="large", alignment="right"
+                ),
+                "תיאור": st.column_config.TextColumn(
+                    width="large", alignment="right"
+                ),
             },
         )
         if st.button("שמירת שינויים במשרות", type="primary"):

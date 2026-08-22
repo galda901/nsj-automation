@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     gmail_mark_processed: bool = True
     gmail_client_secret_file: Path | None = None
     gmail_token_file: Path | None = None
+    worker_poll_seconds: int = 300
+    worker_lock_file: Path = Path("./data/worker.lock")
+    telegram_enabled: bool = False
+    telegram_dry_run: bool = True
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    telegram_max_attempts: int = 3
+    telegram_retry_seconds: int = 300
+    dashboard_public_url: str | None = None
     outlook_enabled: bool = False
     meta_enabled: bool = False
 
@@ -45,6 +54,7 @@ class Settings(BaseSettings):
             Path(self.database_url.removeprefix("sqlite:///./")).parent.mkdir(
                 parents=True, exist_ok=True
             )
+        self.worker_lock_file.parent.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

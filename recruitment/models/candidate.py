@@ -31,6 +31,7 @@ class Candidate(SQLModel, table=True):
     relocation_preference: str | None = None
     ai_summary: str | None = None
     comments: str | None = None
+    current_job_id: str | None = Field(default=None, foreign_key="jobposition.id", index=True)
     parse_confidence: float | None = None
     source: str | None = None
     status: str = Field(default="new", index=True)

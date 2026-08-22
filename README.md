@@ -47,6 +47,7 @@ python -m pytest
 python -m ruff check .
 python -m scripts.export_candidates_to_excel
 python -m scripts.ingest_gmail_daily
+python -m scripts.run_worker --once
 python -m scripts.rebuild_embeddings
 python -m scripts.setup_gmail_oauth
 ```

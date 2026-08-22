@@ -4,6 +4,7 @@ from recruitment.models.interaction import Interaction
 from recruitment.models.ingestion import IngestionLog
 from recruitment.models.job import JobPosition, JobRequirement
 from recruitment.models.match import MatchResult
+from recruitment.models.notification import NotificationOutbox, WorkerState
 from recruitment.models.vector import EmbeddingRecord
 
 __all__ = [
@@ -17,4 +18,6 @@ __all__ = [
     "JobPosition",
     "JobRequirement",
     "MatchResult",
+    "NotificationOutbox",
+    "WorkerState",
 ]

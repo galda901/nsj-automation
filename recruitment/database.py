@@ -32,6 +32,9 @@ def _apply_sqlite_migrations() -> None:
     if "comments" not in candidate_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE candidate ADD COLUMN comments VARCHAR"))
+    if "current_job_id" not in candidate_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE candidate ADD COLUMN current_job_id VARCHAR"))
     if "source_attachment_key" not in ingestion_columns:
         with engine.begin() as connection:
             connection.execute(

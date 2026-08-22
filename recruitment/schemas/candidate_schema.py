@@ -28,6 +28,7 @@ class CandidateCreate(BaseModel):
     relocation_preference: str | None = None
     ai_summary: str | None = None
     comments: str | None = None
+    current_job_id: str | None = None
     parse_confidence: float | None = Field(default=None, ge=0, le=1)
     source: str | None = "manual"
     status: str = "new"
@@ -54,6 +55,7 @@ class CandidateUpdate(BaseModel):
     relocation_preference: str | None = None
     ai_summary: str | None = None
     comments: str | None = None
+    current_job_id: str | None = None
     parse_confidence: float | None = Field(default=None, ge=0, le=1)
     source: str | None = None
     status: str | None = None

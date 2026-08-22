@@ -81,8 +81,10 @@ def test_gmail_cv_sync_retries_only_failed_attachments(monkeypatch) -> None:
         second_run = email_ingestion.ingest_gmail_daily(session)
 
     assert first_run["cvs_ingested"] == 1
+    assert first_run["candidate_ids"] == ["cand_1"]
     assert len(first_run["errors"]) == 1
     assert second_run["cvs_ingested"] == 1
+    assert second_run["candidate_ids"] == ["cand_1"]
     assert client.all_messages_calls == 2
     assert client.cv_label_requests == [["CVs", "INBOX"], ["CVs", "INBOX"]]
     assert client.downloaded_attachment_ids == ["attachment-1", "attachment-2", "new-attachment-2"]

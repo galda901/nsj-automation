@@ -24,6 +24,8 @@ def ingest_gmail_daily(session: Session) -> dict:
             "jobs_drafted": 0,
             "cvs_ingested": 0,
             "duplicates_skipped": 0,
+            "job_ids": [],
+            "candidate_ids": [],
             "errors": ["GMAIL_ENABLED is false"],
         }
     result = {
@@ -31,6 +33,8 @@ def ingest_gmail_daily(session: Session) -> dict:
         "jobs_drafted": 0,
         "cvs_ingested": 0,
         "duplicates_skipped": 0,
+        "job_ids": [],
+        "candidate_ids": [],
         "job_messages_found": 0,
         "cv_messages_found": 0,
         "attachments_found": 0,
@@ -104,6 +108,7 @@ def _ingest_job_message(
         )
         _log(session, label, message.id, None, "job", job.id, "success", message.subject)
         result["jobs_drafted"] += 1
+        result["job_ids"].append(job.id)
         _event(result, "job_drafted", message=message, detail=f"{job.title} -> {job.id}")
     except Exception as error:
         _log(session, label, message.id, None, "job", None, "error", str(error))
@@ -206,6 +211,7 @@ def _ingest_cv_message(
             )
             accepted += 1
             result["cvs_ingested"] += 1
+            result["candidate_ids"].append(candidate_id)
             _event(
                 result,
                 "cv_ingested",

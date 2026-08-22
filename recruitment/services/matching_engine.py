@@ -19,12 +19,14 @@ MATCH_QUALIFICATION_THRESHOLD = 60.0
 MATCHING_EMBEDDING_SOURCE = "matching_text"
 
 
-def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]:
+def match_candidates_for_job(
+    job_id: str, session: Session, candidate_limit: int | None = 20
+) -> list[MatchResult]:
     job = session.get(JobPosition, job_id)
     if job is None:
         raise LookupError(f"Job {job_id!r} was not found")
 
-    candidates = retrieved_candidates_for_job(job, session)
+    candidates = retrieved_candidates_for_job(job, session, limit=candidate_limit)
     results: list[MatchResult] = []
     for candidate, vector_score in candidates:
         deterministic_score, explanation = basic_candidate_score(candidate, job)
@@ -55,7 +57,7 @@ def match_candidates_for_job(job_id: str, session: Session) -> list[MatchResult]
 
 
 def retrieved_candidates_for_job(
-    job: JobPosition, session: Session, limit: int = 20
+    job: JobPosition, session: Session, limit: int | None = 20
 ) -> list[tuple[Candidate, float]]:
     """Load cached match embeddings and create one only when its source text changed."""
     upsert_embedding(
@@ -70,10 +72,16 @@ def retrieved_candidates_for_job(
         session, "job", job.id, source_type=MATCHING_EMBEDDING_SOURCE
     )
     if job_embedding is None:
-        return [(candidate, 0.0) for candidate in session.exec(select(Candidate)).all()]
+        candidates = list(
+            session.exec(select(Candidate).where(Candidate.status != "not_relevant")).all()
+        )
+        ranked = [(candidate, 0.0) for candidate in candidates]
+        return ranked if limit is None else ranked[:limit]
     job_vector = decode_embedding(job_embedding)
     ranked: list[tuple[Candidate, float]] = []
-    candidates = list(session.exec(select(Candidate)).all())
+    candidates = list(
+        session.exec(select(Candidate).where(Candidate.status != "not_relevant")).all()
+    )
     for candidate in candidates:
         upsert_embedding(
             session,
@@ -97,7 +105,8 @@ def retrieved_candidates_for_job(
         record = candidate_embeddings.get(candidate.id)
         if record is not None:
             ranked.append((candidate, cosine_similarity(job_vector, decode_embedding(record))))
-    return sorted(ranked, key=lambda item: item[1], reverse=True)[:limit]
+    ordered = sorted(ranked, key=lambda item: item[1], reverse=True)
+    return ordered if limit is None else ordered[:limit]
 
 
 def basic_candidate_score(candidate: Candidate, job: JobPosition) -> tuple[float, str]:

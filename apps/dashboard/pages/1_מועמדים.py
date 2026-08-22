@@ -28,7 +28,9 @@ def clean_value(value: object) -> object:
 
 
 def changed_candidates(
-    edited: pd.DataFrame, original: pd.DataFrame
+    edited: pd.DataFrame,
+    original: pd.DataFrame,
+    job_id_by_label: dict[str, str | None],
 ) -> list[tuple[str, dict]]:
     field_map = {
         "הערות": "comments",
@@ -37,6 +39,7 @@ def changed_candidates(
         "עיר": "city",
         "תפקיד": "current_title",
         "סטטוס": "status",
+        "משרה": "current_job_id",
         "תקציר": "ai_summary",
     }
     original_by_id = original.set_index("id")
@@ -50,6 +53,8 @@ def changed_candidates(
                     clean_value(row[column]), clean_value(row[column])
                 )
                 if api_field == "status"
+                else job_id_by_label.get(clean_value(row[column]) or "")
+                if api_field == "current_job_id"
                 else clean_value(row[column])
             )
             for column, api_field in field_map.items()
@@ -69,6 +74,14 @@ def filter_visible_candidates(view: pd.DataFrame, query: str) -> pd.DataFrame:
         lambda column: column.str.contains(term, case=False, regex=False)
     )
     return view.loc[matches.any(axis=1)]
+
+
+def candidate_name_link(candidate: pd.Series) -> str:
+    """Keep every name renderable by LinkColumn, including candidates without a CV."""
+    name = str(candidate.get("full_name") or "")
+    if candidate.get("latest_cv_path"):
+        return f"{API_BASE_URL}/candidates/{candidate['id']}/latest-cv/open#{name}"
+    return f"#{name}"
 
 
 st.set_page_config(page_title="מועמדים", layout="wide")
@@ -97,6 +110,13 @@ candidate_status = right.selectbox(
 )
 
 try:
+    jobs = get_json("/jobs")
+    job_label_by_id = {
+        job["id"]: f"{job['title']} — {job['client_name']} ({job['id']})"
+        for job in jobs
+    }
+    job_id_by_label = {label: job_id for job_id, label in job_label_by_id.items()}
+    job_id_by_label[""] = None
     candidates = get_json(
         "/candidates/with-files",
         params={"candidate_status": candidate_status or None},
@@ -105,6 +125,9 @@ try:
     if frame.empty:
         st.info("עדיין אין מועמדים. אפשר להעלות קורות חיים בעמוד קליטת דואר.")
     else:
+        current_job_ids = frame.get(
+            "current_job_id", pd.Series(index=frame.index, dtype="object")
+        )
         view = pd.DataFrame(
             {
                 "הערות": frame["comments"],
@@ -115,20 +138,14 @@ try:
                 "סטטוס": frame["status"].map(
                     lambda value: STATUS_LABELS.get(value, value)
                 ),
+                "משרה": current_job_ids.map(job_label_by_id).fillna(""),
                 "תפקיד": frame["current_title"],
                 "עיר": frame["city"],
                 "טלפון": frame["phone"],
                 "דוא״ל": frame["email"],
                 "מחיקה": False,
                 "id": frame["id"],
-                "שם": frame.apply(
-                    lambda row: (
-                        f"{API_BASE_URL}/candidates/{row['id']}/latest-cv/open#{row['full_name']}"
-                        if row["latest_cv_path"]
-                        else row["full_name"]
-                    ),
-                    axis=1,
-                ),
+                "שם": frame.apply(candidate_name_link, axis=1),
             }
         )
         st.caption("אפשר לערוך תא ולשמור את השינויים ישירות למסד הנתונים.")
@@ -140,23 +157,53 @@ try:
             hide_index=True,
             use_container_width=True,
             key="candidate-editor",
+            column_order=[
+                "id",
+                "מחיקה",
+                "הערות",
+                "תקציר",
+                "נקלט בתאריך",
+                "דוא״ל",
+                "טלפון",
+                "עיר",
+                "תפקיד",
+                "משרה",
+                "סטטוס",
+                "שם",
+            ],
             disabled=["נקלט בתאריך", "שם"],
             column_config={
                 "id": None,
                 "מחיקה": st.column_config.CheckboxColumn(
-                    "מחיקה", help="סמנו מועמד/ת למחיקה לצמיתות"
+                    "מחיקה", help="סמנו מועמד/ת למחיקה לצמיתות", alignment="right"
                 ),
-                "נקלט בתאריך": st.column_config.TextColumn(width="small"),
-                "שם": st.column_config.LinkColumn("שם", display_text=r"#(.*)"),
+                "נקלט בתאריך": st.column_config.TextColumn(
+                    width="small", alignment="right"
+                ),
+                "שם": st.column_config.LinkColumn(
+                    "שם", width="medium", display_text=r"#(.*)", alignment="right"
+                ),
                 "סטטוס": st.column_config.SelectboxColumn(
                     options=list(STATUS_LABELS.values())
                 ),
-                "תקציר": st.column_config.TextColumn(width="large"),
-                "הערות": st.column_config.TextColumn(width="medium"),
+                "משרה": st.column_config.SelectboxColumn(
+                    options=[""] + [label for label in job_id_by_label if label],
+                    width="medium",
+                ),
+                "תפקיד": st.column_config.TextColumn(alignment="right"),
+                "עיר": st.column_config.TextColumn(alignment="right"),
+                "טלפון": st.column_config.TextColumn(alignment="right"),
+                "דוא״ל": st.column_config.TextColumn(alignment="right"),
+                "תקציר": st.column_config.TextColumn(
+                    width="large", alignment="right"
+                ),
+                "הערות": st.column_config.TextColumn(
+                    width="medium", alignment="right"
+                ),
             },
         )
         if st.button("שמירת שינויים במועמדים", type="primary"):
-            changes = changed_candidates(edited, view)
+            changes = changed_candidates(edited, view, job_id_by_label)
             if not changes:
                 st.info("אין שינויים במועמדים לשמירה.")
             else:
